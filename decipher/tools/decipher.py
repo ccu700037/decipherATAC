@@ -8,9 +8,12 @@ import scipy
 import torch
 from matplotlib import pyplot as plt
 import pyro.optim
+import pyro.distributions as dist
 from pyro import poutine
 from pyro.infer import SVI, Trace_ELBO
 from tqdm import tqdm
+from torch.nn.functional import softplus
+from dataclasses import dataclass
 
 from decipher.plot.decipher import decipher as plot_decipher_v
 from decipher.tools._decipher import Decipher, DecipherConfig

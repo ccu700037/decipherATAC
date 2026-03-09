@@ -13,6 +13,8 @@ from torch.distributions import constraints
 from torch.nn.functional import softmax, softplus
 
 from decipher.tools._decipher.module import ConditionalDenseNN
+from decipher.tools._decipher.module import ModularEncoder
+
 
 
 @dataclass(unsafe_hash=True)
@@ -189,3 +191,54 @@ class Decipher(nn.Module):
         mu = softmax(mu, dim=-1)
         library_size = x.sum(axis=-1, keepdim=True)
         return (library_size * mu).detach().numpy()
+
+@dataclass(unsafe_hash=True)
+class DecipherATACConfig(DecipherConfig):
+    module_encoder_hidden: int = 32
+    learning_rate: float = 1e-3
+    # gene_modules set after init — mutable so not a dataclass field
+    
+    def __post_init__(self):
+        self.gene_modules = None  # List[List[int]], set before training
+
+class DecipherATAC(Decipher):
+    def __init__(self, config: DecipherATACConfig):
+        super().__init__(config)  # builds all decoders + encoder_zx_to_v
+        
+        assert config.gene_modules is not None
+        assert len(config.gene_modules) == config.dim_z, (
+            f"len(gene_modules)={len(config.gene_modules)} must equal dim_z={config.dim_z}"
+        )
+        
+        # Swap out the standard encoder for the modular one
+        self.encoder_x_to_z = ModularEncoder(
+        config.gene_modules,
+        n_genes_total=config.dim_genes,  # this is set by initialize_from_adata
+        hidden_dim=config.module_encoder_hidden,
+    )
+        # encoder_zx_to_v inherited unchanged
+
+    def guide(self, x, context=None):
+        pyro.module("decipher", self)
+        with pyro.plate("batch", len(x)), poutine.scale(scale=1.0):
+            x_log = torch.log1p(x)
+            
+            # Modular encoder — each z_i from its own gene module
+            z_loc, z_scale = self.encoder_x_to_z(x_log)
+            z_scale = softplus(z_scale) + self._epsilon
+            z = pyro.sample("z", dist.Normal(z_loc, z_scale).to_event(1))
+            
+            # v encoder — completely unchanged
+            zx = torch.cat([z, x_log], dim=-1)
+            v_loc, v_scale = self.encoder_zx_to_v(zx, context=context)
+            v_scale = softplus(v_scale) + self._epsilon
+            with poutine.scale(scale=self.config.beta):
+                if self.config.prior == "gamma":
+                    posterior_v = dist.Gamma(softplus(v_loc), v_scale).to_event(1)
+                else:
+                    posterior_v = dist.Normal(v_loc, v_scale).to_event(1)
+                pyro.sample("v", posterior_v)
+        
+        return z_loc, v_loc, z_scale, v_scale
+    # model(), compute_v_z_numpy(), impute_gene_expression_numpy() 
+    # all inherited unchanged

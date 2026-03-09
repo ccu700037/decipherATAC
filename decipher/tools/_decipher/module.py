@@ -1,4 +1,4 @@
-from typing import Sequence
+from typing import Sequence, List
 
 import numpy as np
 import torch
@@ -102,3 +102,52 @@ class ConditionalDenseNN(torch.nn.Module):
 
             else:
                 return tuple([h[..., s] for s in self.output_slices])
+
+class ModularEncoder(nn.Module):
+    def __init__(self, gene_modules, n_genes_total, hidden_dim=32, context_dim=64):
+        super().__init__()
+        self.gene_modules = gene_modules
+        
+        # Small shared encoder over ALL genes → context vector
+        # This lets modules communicate without breaking the modular structure
+        self.global_context = nn.Sequential(
+            nn.Linear(n_genes_total, 128),
+            nn.LayerNorm(128),        # not BatchNorm
+            nn.ReLU(),
+            nn.Linear(128, context_dim),
+            nn.LayerNorm(context_dim), # not BatchNorm
+            nn.ReLU(),
+        )
+        
+        # Each module encoder now takes its genes + global context
+        self.encoders = nn.ModuleList([
+            nn.Sequential(
+                nn.Linear(len(genes) + context_dim, max(32, len(genes))),
+                nn.LayerNorm(max(32, len(genes))),  # not BatchNorm
+                nn.ReLU(),
+                nn.Linear(max(32, len(genes)), 2),
+            )
+            for genes in gene_modules
+        ])
+        
+        def _init_weights(m):
+            if isinstance(m, nn.Linear):
+                nn.init.xavier_uniform_(m.weight)
+                nn.init.zeros_(m.bias)
+
+        # Apply initialization to everything in this module
+        self.apply(_init_weights)
+        
+    
+    def forward(self, x):
+        context = self.global_context(x)  # (batch, context_dim)
+        locs, scales = [], []
+        for encoder, gene_idx in zip(self.encoders, self.gene_modules):
+            x_mod = x[:, gene_idx]
+            x_in = torch.cat([x_mod, context], dim=-1)
+            out = encoder(x_in)
+            locs.append(out[:, 0:1])
+            scales.append(out[:, 1:2])
+        z_loc = torch.cat(locs, dim=-1)
+        z_scale = torch.cat(scales, dim=-1)
+        return z_loc, z_scale

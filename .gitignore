@@ -1,0 +1,13 @@
+# Python cache
+__pycache__/
+*.pyc
+
+# Virtual environment
+.venv/
+
+# Mac
+.DS_Store
+
+# Local experiment outputs
+_decipher_models/
+current_results.txt
