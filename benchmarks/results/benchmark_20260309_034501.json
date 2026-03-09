@@ -1,0 +1,96 @@
+{
+  "timestamp": "2026-03-09T03:45:01.288099",
+  "sweep": [
+    {
+      "n_confounders": 0,
+      "seed": 42,
+      "std_score": 0.6578655076473232,
+      "atac_score": 0.578321050862599
+    },
+    {
+      "n_confounders": 0,
+      "seed": 123,
+      "std_score": 0.4981466755668277,
+      "atac_score": 0.4634253380837211
+    },
+    {
+      "n_confounders": 0,
+      "seed": 7,
+      "std_score": 0.623504583601856,
+      "atac_score": 0.6171670731362487
+    },
+    {
+      "n_confounders": 100,
+      "seed": 42,
+      "std_score": 0.6049343542137734,
+      "atac_score": 0.6746420078493169
+    },
+    {
+      "n_confounders": 100,
+      "seed": 123,
+      "std_score": 0.6187013953884843,
+      "atac_score": 0.4456590309105045
+    },
+    {
+      "n_confounders": 100,
+      "seed": 7,
+      "std_score": 0.7579971556276701,
+      "atac_score": 0.6172778650607386
+    },
+    {
+      "n_confounders": 250,
+      "seed": 42,
+      "std_score": 0.5574923881593179,
+      "atac_score": 0.6089844716069429
+    },
+    {
+      "n_confounders": 250,
+      "seed": 123,
+      "std_score": 0.5642378367535497,
+      "atac_score": 0.4868851499233336
+    },
+    {
+      "n_confounders": 250,
+      "seed": 7,
+      "std_score": 0.5488962066628964,
+      "atac_score": 0.7351258773777887
+    },
+    {
+      "n_confounders": 500,
+      "seed": 42,
+      "std_score": 0.7366271968232228,
+      "atac_score": 0.6506212430731457
+    },
+    {
+      "n_confounders": 500,
+      "seed": 123,
+      "std_score": 0.7523066133862244,
+      "atac_score": 0.5519610433802453
+    },
+    {
+      "n_confounders": 500,
+      "seed": 7,
+      "std_score": 0.6975917306054946,
+      "atac_score": 0.68048411840512
+    }
+  ],
+  "mofa": {
+    "score": 0.27990135009685513,
+    "n_confounders": 500
+  },
+  "sanity_check": {
+    "std_score": 0.6348538350685812,
+    "atac_score": 0.8667518545863675,
+    "n_confounders": 0,
+    "tf_correlation": 0.3,
+    "n_cells": 2000
+  },
+  "default_sim": {
+    "std_score": 0.5098233420350091,
+    "atac_score": 0.776720339119023,
+    "n_confounders": 500,
+    "tf_correlation": 0.6,
+    "n_cells": 5000
+  },
+  "extra": {}
+}

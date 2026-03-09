@@ -195,7 +195,7 @@ class Decipher(nn.Module):
 @dataclass(unsafe_hash=True)
 class DecipherATACConfig(DecipherConfig):
     module_encoder_hidden: int = 32
-    learning_rate: float = 1e-3
+    learning_rate: float = 2e-4
     # gene_modules set after init — mutable so not a dataclass field
     
     def __post_init__(self):
@@ -212,10 +212,9 @@ class DecipherATAC(Decipher):
         
         # Swap out the standard encoder for the modular one
         self.encoder_x_to_z = ModularEncoder(
-        config.gene_modules,
-        n_genes_total=config.dim_genes,  # this is set by initialize_from_adata
-        hidden_dim=config.module_encoder_hidden,
-    )
+            config.gene_modules,
+            hidden_dim=config.module_encoder_hidden,
+        )
         # encoder_zx_to_v inherited unchanged
 
     def guide(self, x, context=None):

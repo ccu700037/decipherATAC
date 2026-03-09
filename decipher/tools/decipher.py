@@ -158,6 +158,7 @@ def decipher_train(
         {
             "lr": decipher_config.learning_rate,
             "weight_decay": 1e-4,
+            "clip_norm": 1.0,
         }
     )
     elbo = Trace_ELBO()

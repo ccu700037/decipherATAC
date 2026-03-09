@@ -169,6 +169,12 @@ def simulate_modular_rna(
     print(f"% cells with count > 5: {(X > 5).mean():.1%}")
     print(f"99th percentile count: {np.percentile(adata.X, 99):.0f}")
     print(f"% counts > 100: {(adata.X > 100).mean():.2%}")
+    
+    print(f"X_modules shape: {X_modules.shape}")
+    print(f"X_confounders shape: {X_confounders.shape}")  
+    print(f"Final X shape: {adata.X.shape}")
+    print(f"gene_modules[0][:5]: {adata.uns['gene_modules'][0][:5]}")
+    print(f"gene_modules max index: {max(max(m) for m in adata.uns['gene_modules'])}")
     return adata
 
 

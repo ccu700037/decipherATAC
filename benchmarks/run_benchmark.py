@@ -30,6 +30,11 @@ def run_benchmark(adata_sim):
     config_atac = DecipherATACConfig(dim_z=10, dim_v=2, n_epochs=1000, early_stopping_patience=100)
     config_atac.initialize_from_adata(adata_sim)
     config_atac.gene_modules = true_gene_modules
+    print(f"Module 0 genes (first 5): {config_atac.gene_modules[0][:5]}")
+    print(f"Gene index range: {min(min(m) for m in config_atac.gene_modules)} - {max(max(m) for m in config_atac.gene_modules)}")
+    print(f"Total genes in adata: {adata_sim.shape[1]}")
+    print(f"Any overlap between modules and confounder range: {any(g >= 500 for m in config_atac.gene_modules for g in m)}")
+
     decipher_atac, _ = decipher_atac_train(adata_sim, config_atac)
     z_atac = adata_sim.obsm['decipher_z'].copy()
 
@@ -97,94 +102,71 @@ def run_mofa(adata_sim, n_factors=10):
 
 if __name__ == "__main__":
     from benchmarks.simulate import simulate_modular_rna
+    from benchmarks.save_results import save_results
     from scipy.stats import spearmanr
     from scipy.optimize import linear_sum_assignment
     import random
 
+    # ── Sanity check: 0 confounders, easy signal ──────────────────────────────
+    print("=== Quick sanity check ===")
+    adata_easy = simulate_modular_rna(n_confounders=0, tf_correlation=0.3, n_cells=2000)
+    sanity_std, sanity_atac = run_benchmark(adata_easy)
+
+    # ── Default simulation ────────────────────────────────────────────────────
+    print("\n=== Default simulation ===")
     adata_sim = simulate_modular_rna()
-    true_z = adata_sim.obsm['true_z']
-    true_gene_modules = adata_sim.uns['gene_modules']
+    default_std, default_atac = run_benchmark(adata_sim)
 
-    all_genes = list(range(adata_sim.shape[1]))
-    genes_copy = all_genes.copy()
-    random.shuffle(genes_copy)
-    module_size = len(true_gene_modules[0])
-    shuffled_modules = [genes_copy[i*module_size:(i+1)*module_size]
-                        for i in range(len(true_gene_modules))]
+    # ── MOFA+ on default simulation (500 confounders) ─────────────────────────
+    mofa_score = None
+    mofa_n_conf = 500
+    print("\n=== MOFA+ on default simulation ===")
+    try:
+        z_mofa = run_mofa(adata_sim, n_factors=10)
+        true_z_default = adata_sim.obsm['true_z']
 
-    config_shuffled = DecipherATACConfig(dim_z=10, dim_v=2, n_epochs=1000, early_stopping_patience=100)
-    config_shuffled.initialize_from_adata(adata_sim)
-    config_shuffled.gene_modules = shuffled_modules
-    decipher_atac_train(adata_sim, config_shuffled)
-    z_shuffled = adata_sim.obsm['decipher_z'].copy()
+        def _best_corr(pred_z, true_z):
+            n = true_z.shape[1]
+            corr_matrix = np.array([
+                [abs(spearmanr(pred_z[:, i], true_z[:, j]).statistic)
+                 for j in range(n)]
+                for i in range(n)
+            ])
+            row_ind, col_ind = linear_sum_assignment(-corr_matrix)
+            return corr_matrix[row_ind, col_ind].mean()
 
-    def best_module_correlation(pred_z, true_z):
-        n = true_z.shape[1]
-        corr_matrix = np.array([
-            [abs(spearmanr(pred_z[:, i], true_z[:, j]).statistic)
-            for j in range(n)]
-            for i in range(n)
-        ])
-        row_ind, col_ind = linear_sum_assignment(-corr_matrix)
-        return corr_matrix[row_ind, col_ind].mean()
+        mofa_score = _best_corr(z_mofa, true_z_default)
+        print(f"MOFA+ (linear, n_confounders={mofa_n_conf}): {mofa_score:.3f}")
+    except Exception as e:
+        print(f"MOFA+ failed: {e}")
 
-    shuffled_score = best_module_correlation(z_shuffled, true_z)
-    print(f"\nDecipherATAC (shuffled modules): {shuffled_score:.3f}")
-    print(f"DecipherATAC (true modules):     0.862  (from previous run)")
-    print(f"Standard Decipher:               0.562  (from previous run)")
+    # ── Confounder sweep ──────────────────────────────────────────────────────
+    print("\n=== Confounder sweep ===")
+    sweep_results = []
+    for n_conf in [0, 100, 250, 500]:
+        for seed in [42, 123, 7]:
+            print(f"\n-- n_confounders={n_conf}, seed={seed} --")
+            adata = simulate_modular_rna(
+                n_confounders=n_conf,
+                tf_correlation=0.6,
+                n_cells=3000,
+                seed=seed
+            )
+            std_score, atac_score = run_benchmark(adata)
+            sweep_results.append((n_conf, seed, std_score, atac_score))
 
-    # Small sanity check
-    # print("=== Quick sanity check ===")
-    # adata_easy = simulate_modular_rna(n_confounders=0, tf_correlation=0.3, n_cells=2000)
-    # run_benchmark(adata_easy)
+    print("\n=== Sweep results ===")
+    print("n_confounders | seed | Std Decipher | DecipherATAC")
+    for r in sweep_results:
+        print(f"{r[0]:13} | {r[1]:4} | {r[2]:12.3f} | {r[3]:13.3f}")
 
-    # print("\n=== Default simulation ===")
-    # adata_sim = simulate_modular_rna()
-    # run_benchmark(adata_sim)
-
-    # print("\n=== MOFA+ on default simulation ===")
-    # try:
-    #     z_mofa = run_mofa(adata_sim, n_factors=10)  # or config_std.dim_z
-    #     from scipy.stats import spearmanr
-
-    #     def best_module_correlation(pred_z, true_z):
-    #         n = true_z.shape[1]
-    #         corr_matrix = np.array([
-    #             [abs(spearmanr(pred_z[:, i], true_z[:, j]).statistic)
-    #              for j in range(n)]
-    #             for i in range(n)
-    #         ])
-    #         matched = []
-    #         for _ in range(n):
-    #             i, j = np.unravel_index(corr_matrix.argmax(), corr_matrix.shape)
-    #             matched.append(corr_matrix[i, j])
-    #             corr_matrix[i, :] = -1
-    #             corr_matrix[:, j] = -1
-    #         return np.mean(matched)
-
-    #     true_z = adata_sim.obsm['true_z']
-    #     mofa_score = best_module_correlation(z_mofa, true_z)
-    #     print(f"MOFA+ (linear) score: {mofa_score:.3f}")
-
-    # except ImportError:
-    #     print("MOFA+ not installed. Run: pip install mofapy2")
-
-    # print("\n=== Confounder sweep ===")
-    # results = []
-    # for n_conf in [0, 100, 250, 500]:
-    #     for seed in [42, 123, 7]:  # 3 seeds for error bars
-    #         print(f"\n-- n_confounders={n_conf}, seed={seed} --")
-    #         adata = simulate_modular_rna(
-    #             n_confounders=n_conf,
-    #             tf_correlation=0.6,
-    #             n_cells=3000,
-    #             seed=seed
-    #         )
-    #         std_score, atac_score = run_benchmark(adata)
-    #         results.append((n_conf, seed, std_score, atac_score))
-
-    # # Optional: print a simple table
-    # print("\n=== Sweep results ===")
-    # print("n_confounders | seed | Std Decipher | DecipherATAC")
-    # for r in results:
-    #     print(f"{r[0]:13} | {r[1]:4} | {r[2]:12.3f} | {r[3]:13.3f}")
+    # ── Save everything ───────────────────────────────────────────────────────
+    save_results(
+        sweep_results=sweep_results,
+        mofa_score=mofa_score,
+        mofa_n_confounders=mofa_n_conf,
+        sanity_std=sanity_std,
+        sanity_atac=sanity_atac,
+        default_std=default_std,
+        default_atac=default_atac,
+    )

@@ -104,47 +104,43 @@ class ConditionalDenseNN(torch.nn.Module):
                 return tuple([h[..., s] for s in self.output_slices])
 
 class ModularEncoder(nn.Module):
-    def __init__(self, gene_modules, n_genes_total, hidden_dim=32, context_dim=64):
+    def __init__(self, gene_modules, hidden_dim=32):
         super().__init__()
         self.gene_modules = gene_modules
-        
-        # Small shared encoder over ALL genes → context vector
-        # This lets modules communicate without breaking the modular structure
-        self.global_context = nn.Sequential(
-            nn.Linear(n_genes_total, 128),
-            nn.LayerNorm(128),        # not BatchNorm
-            nn.ReLU(),
-            nn.Linear(128, context_dim),
-            nn.LayerNorm(context_dim), # not BatchNorm
-            nn.ReLU(),
-        )
-        
-        # Each module encoder now takes its genes + global context
+
+        n_modules = len(gene_modules)
         self.encoders = nn.ModuleList([
             nn.Sequential(
-                nn.Linear(len(genes) + context_dim, max(32, len(genes))),
-                nn.LayerNorm(max(32, len(genes))),  # not BatchNorm
+                nn.Linear(len(genes) + n_modules, 64),  # was max(128, len(genes)*2)
+                nn.LayerNorm(64),
                 nn.ReLU(),
-                nn.Linear(max(32, len(genes)), 2),
+                nn.Linear(64, 32),                       # was max(64, len(genes))
+                nn.LayerNorm(32),
+                nn.ReLU(),
+                nn.Linear(32, 2),
             )
             for genes in gene_modules
         ])
-        
         def _init_weights(m):
             if isinstance(m, nn.Linear):
                 nn.init.xavier_uniform_(m.weight)
                 nn.init.zeros_(m.bias)
-
-        # Apply initialization to everything in this module
         self.apply(_init_weights)
-        
-    
+
     def forward(self, x):
-        context = self.global_context(x)  # (batch, context_dim)
+        # Compute mean expression per module — fixed aggregation, no learned params
+        module_means = torch.stack([
+            x[:, gene_idx].mean(dim=-1) 
+            for gene_idx in self.gene_modules
+        ], dim=-1)  # (batch, n_modules)
+        # Detach so this summary cannot be backpropped through to cheat
+        module_means = module_means.detach()
+        
         locs, scales = [], []
-        for encoder, gene_idx in zip(self.encoders, self.gene_modules):
+        for i, (encoder, gene_idx) in enumerate(zip(self.encoders, self.gene_modules)):
             x_mod = x[:, gene_idx]
-            x_in = torch.cat([x_mod, context], dim=-1)
+            # Concatenate own genes + mean of ALL modules (including self)
+            x_in = torch.cat([x_mod, module_means], dim=-1)
             out = encoder(x_in)
             locs.append(out[:, 0:1])
             scales.append(out[:, 1:2])
